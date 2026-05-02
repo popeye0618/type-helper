@@ -1,5 +1,6 @@
 import io
 import re
+from pathlib import Path
 
 import google.generativeai as genai
 import streamlit as st
@@ -139,10 +140,20 @@ def markdown_to_docx_buffer(markdown: str) -> io.BytesIO:
 st.set_page_config(page_title="시험지 깔끔 변환기", layout="centered")
 
 GEMINI_PROMPT = (
-    "이 이미지에서 볼펜이나 연필로 쓰인 낙서, 빗금, 풀이 과정은 모두 무시해. "
-    "인쇄된 문제 텍스트, 보기(①, ②, ③...), 그리고 표 형식만 완벽하게 추출해. "
-    "특히 표 구조는 마크다운(Markdown)의 Table 형식으로 정확하게 구현해서 출력해 줘."
+    "이 이미지들에서 볼펜이나 연필로 쓰인 낙서, 빗금, 풀이 과정, 체크 표시, 필기 흔적은 모두 무시해. "
+    "단원명, 교재명, 페이지 번호, 머리말, 꼬리말, 학습 목표, 안내 문구처럼 문제 풀이에 직접 필요하지 않은 정보는 추출하지 마. "
+    "문제번호, 문제 본문, 보기(①, ②, ③...), 조건, 지문, 그리고 표만 추출해. "
+    "문제 본문과 보기는 마크다운(Markdown) 문법을 사용하지 말고 일반 텍스트(plain text)로 출력해. "
+    "표가 있는 경우에만 마크다운(Markdown)의 Table 형식으로 정확하게 구현해. "
+    "표 안에서 원화 금액처럼 숫자 앞에 ₩ 또는 \\ 기호가 붙은 값은 금액으로 판단하고, 해당 금액 셀은 오른쪽 정렬되도록 마크다운 표 정렬 구문을 사용해. "
+    "예를 들어 금액 열의 구분선은 |---:| 형태로 작성해. "
+    "사진은 업로드된 순서대로 이어진 페이지라고 간주해. "
+    "한 문제가 여러 사진이나 여러 페이지에 걸쳐 이어져 있으면, 같은 문제번호의 내용으로 판단하여 하나의 문제로 합쳐서 출력해. "
+    "다음 사진에 이어지는 문제의 나머지 내용, 보기, 표가 있으면 이전 사진의 해당 문제 아래에 이어 붙여. "
+    "새 문제번호가 나오기 전까지는 같은 문제의 연속 내용으로 처리해. "
+    "출력에는 추출한 문제 내용만 포함하고, 설명이나 요약, 추출 과정에 대한 말은 쓰지 마."
 )
+
 
 with st.sidebar:
     api_key = st.text_input(
@@ -165,6 +176,9 @@ can_convert = key_ok and file_ok
 if st.button("변환 시작", disabled=not can_convert):
     st.session_state.pop("gemini_markdown", None)
     file_bytes = uploaded_file.read()
+    uploaded_stem = Path(uploaded_file.name or "시험지").stem
+    safe_stem = re.sub(r'[\\/:*?"<>|]+', "_", uploaded_stem).strip() or "시험지"
+    st.session_state["download_file_name"] = f"{safe_stem}_변환.docx"
     name_lower = (uploaded_file.name or "").lower()
     is_pdf = uploaded_file.type == "application/pdf" or name_lower.endswith(".pdf")
 
@@ -203,6 +217,6 @@ if st.session_state.get("gemini_markdown"):
     st.download_button(
         label="워드 파일 다운로드",
         data=doc_buffer,
-        file_name="시험지_추출결과.docx",
+        file_name=st.session_state.get("download_file_name", "시험지_변환.docx"),
         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
